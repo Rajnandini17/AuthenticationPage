@@ -162,16 +162,49 @@ app.get("/auth/google/secrets",
 passport.authenticate('google', {failureRedirect: '/login'}),
 function(req, res) {
     res.redirect('/secrets');
-}
-);
+});
 
 
-app.get("/secrets", function (req, res) {
+app.get("/secrets", async function (req, res) {
+    try {
+        if (req.isAuthenticated()) {
+            // Fetch all secrets from the database
+            const result = await db.query("SELECT * FROM secrets");
+            const allSecrets = result.rows;
+
+            res.render("secrets", { secrets: allSecrets });
+        } else {
+            res.redirect("/login");
+        }
+    } catch (err) {
+        console.error(err);
+        res.status(500).send("Internal Server Error");
+    }
+});
+
+app.get("/submit", function(req, res){
     if (req.isAuthenticated()) {
-        res.render("secrets");
+        res.render("submit");
     } else {
         res.redirect("/login");
     }
+});
+
+app.post("/submit", function(req, res){
+    const submittedSecret = req.body.secret;
+    const userId = req.user.id; // Assuming you have an 'id' field in your 'users' table
+
+    try {
+        // Save the submitted secret to the database
+        db.query("INSERT INTO secrets (id, secret) VALUES ($1, $2)", [userId, submittedSecret]);
+
+        res.redirect("/secrets"); // Redirect to the secrets page after saving
+    } catch (err) {
+        console.error(err);
+        res.status(500).send("Internal Server Error");
+    }
+    // console.log(req.user);
+
 });
 
 app.get("/logout", function (req, res) {
