@@ -6,6 +6,7 @@ const pg = require("pg");
 const bcrypt = require("bcrypt");
 const passport = require("passport");
 const LocalStrategy = require("passport-local").Strategy;
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const session = require("express-session");
 
 const app = express();
@@ -77,9 +78,44 @@ passport.deserializeUser(async function (id, done) {
     }
 });
 
+passport.use(new GoogleStrategy({
+    clientID: process.env.CLIENT_ID,
+    clientSecret: process.env.CLIENT_SECRET,
+    callbackURL: "http://localhost:3000/auth/google/secrets",
+},
+async function (accessToken, refreshToken, profile, done) {
+    try{
+        if(!profile.emails || profile.emails.length === 0) {
+            return done(null, false, {message: 'Email not provided by Google'});
+        }
+        const result = await db.query(
+            "SELECT * FROM users WHERE google_id = $1",
+            [profile.id]
+        );
+        const existingUser = result.rows[0];
+        if (existingUser) {
+            return done(null, existingUser);
+        } else {
+            const newUser = await db.query(
+                "INSERT INTO users (google_id, email) VALUES ($1, $2) RETURNING *",
+                [profile.id, profile.emails[0].value]
+                );
+
+                return done(null, newUser.rows[0]);
+        }
+    } catch (err) {
+        return done(err);
+    }
+}
+));
+
 app.get("/", function (req, res) {
     res.render("home");
 });
+
+app.get("/auth/google",
+    passport.authenticate("google", {scope: ["profile"]})
+);
 
 app.get("/login", function (req, res) {
     res.render("login");
@@ -116,6 +152,19 @@ app.post("/login",
         failureFlash: true
     })
 );
+
+
+app.get("/auth/google",
+passport.authenticate('google', {scope: ['profile', 'email']})
+);
+
+app.get("/auth/google/secrets",
+passport.authenticate('google', {failureRedirect: '/login'}),
+function(req, res) {
+    res.redirect('/secrets');
+}
+);
+
 
 app.get("/secrets", function (req, res) {
     if (req.isAuthenticated()) {
